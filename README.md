@@ -1,24 +1,28 @@
-# Build a Repository Analysis Agent with Flue
+# flue-repo-assistant
+
+> A bounded, read-only repository analysis agent built with [Flue](https://flueframework.com/).
 
 [![CI](https://github.com/jellydn/flue-repo-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/jellydn/flue-repo-assistant/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 `flue-repo-assistant` is a small, read-only agent for learning the core agent
-loop: **observe → act → reflect**. It uses [Flue](https://flueframework.com/) to
-decide when to list files, read source, search code, or answer with the evidence
-already collected.
+loop: **observe → act → reflect**. It uses Flue to decide when to list files,
+read source, search code, or answer with the evidence already collected.
 
-The default target is [project-oak/oak](https://github.com/project-oak/oak), a
-large Rust-focused monorepo for privacy-preserving distributed systems.
+The default target is [jellydn/oak](https://github.com/jellydn/oak), a large
+Rust-focused monorepo for privacy-preserving distributed systems.
 
-## What it demonstrates
+## Features
 
-- one Flue agent;
-- three typed, read-only tools;
-- one reusable Agent Skill;
-- repository-relative path and symlink confinement;
-- evidence-only answers with file and line citations;
-- a shared, configurable inspection budget;
-- no declared subagent profiles, persistence, deployment, or web UI.
+- One Flue agent
+- Three typed, read-only tools (`list_files`, `read_file`, `search_code`)
+- One reusable Agent Skill
+- Repository-relative path and symlink confinement
+- Evidence-only answers with file and line citations
+- A shared, configurable inspection budget
+- No declared subagent profiles, persistence, deployment, or web UI
+
+## How it works
 
 ```text
 Question
@@ -38,20 +42,20 @@ Question
 
 ## Prerequisites
 
-- Node.js 22.19 or newer;
-- an LLM provider API key;
-- a local checkout of the repository to inspect.
+- Node.js 22.19 or newer
+- An LLM provider API key
+- A local checkout of the repository to inspect
 
 The default model is `openrouter/qwen/qwen3-coder`, which requires an
 `OPENROUTER_API_KEY`. Set `REPO_ASSISTANT_MODEL` to any model listed in
 [Flue's model catalog](https://flueframework.com/models.json) to use another
 provider.
 
-## Quick start with oak
+## Quick start
 
 ```bash
 git clone https://github.com/jellydn/flue-repo-assistant.git
-git clone --depth 1 https://github.com/project-oak/oak.git
+git clone --depth 1 https://github.com/jellydn/oak.git
 cd flue-repo-assistant
 npm install
 cp .env.example .env
@@ -88,17 +92,17 @@ These prompts exercise progressively richer tool use:
 3. **Cross-file flow:** `Explain how an Oak Session binds attestation to its encrypted channel.`
 
 Useful negative tests are `Where is authentication implemented?` and `Which
-files contain database access?` The agent should report what it searched and
+files contain database access?`. The agent should report what it searched and
 avoid pretending that a conventional web-app authentication or database layer
 exists.
 
 ## Configuration
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `REPOSITORY_PATH` | `../oak` | Only repository the tools may inspect |
-| `REPO_ASSISTANT_MODEL` | `openrouter/qwen/qwen3-coder` | Flue model specifier |
-| `REPO_ASSISTANT_MAX_STEPS` | `8` | Shared list/read/search call budget (1–20) |
+| Variable                   | Default                       | Purpose                                    |
+| -------------------------- | ----------------------------- | ------------------------------------------ |
+| `REPOSITORY_PATH`          | `../oak`                      | Only repository the tools may inspect      |
+| `REPO_ASSISTANT_MODEL`     | `openrouter/qwen/qwen3-coder` | Flue model specifier                       |
+| `REPO_ASSISTANT_MAX_STEPS` | `8`                           | Shared list/read/search call budget (1–20) |
 
 To inspect another checkout:
 
@@ -150,12 +154,6 @@ Path checks assume the inspected checkout is stable while a tool call runs. Do
 not use this educational agent against a repository tree being concurrently
 modified by an untrusted process.
 
-Run the local checks with:
-
-```bash
-npm run check
-```
-
 ## Project structure
 
 ```text
@@ -176,6 +174,18 @@ flue-repo-assistant/
 ├── flue.config.ts
 └── README.md
 ```
+
+## Development
+
+Run the local checks (`typecheck`, `test`, `build`, in that order):
+
+```bash
+npm run check
+```
+
+- `npm run typecheck` — `tsc`
+- `npm test` — `tsx --test tests/*.test.ts` (Node's built-in test runner)
+- `npm run build` — `flue build` (emits `dist/`, gitignored)
 
 ## Learning notes
 

@@ -1,15 +1,24 @@
 import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
-import type { RepositoryReader, StepBudget } from './repository.ts';
+import type {
+  DebugLogger,
+  InspectionMetadata,
+  RepositoryReader,
+  StepBudget,
+} from './repository.ts';
+import { summarizeInput, wrapWithBudget } from './repository.ts';
+
+const MAX_RETURNED_ENTRIES = 500;
 
 export function createListFilesTool(
   repository: RepositoryReader,
   budget: StepBudget,
+  debug: DebugLogger,
 ) {
   return defineTool({
     name: 'list_files',
     description:
-      'List files and directories below one repository-relative directory. Use this to discover project structure. Ignored build, dependency, VCS, and symlink entries are omitted.',
+      'List files and directories below one repository-relative directory. Use when the repository structure or a file path is unknown. Ignored build, dependency, VCS, and symlink entries are omitted. Returns repository-relative paths plus an inspection budget snapshot.',
     input: v.object({
       path: v.optional(
         v.pipe(v.string(), v.maxLength(500)),
@@ -22,14 +31,36 @@ export function createListFilesTool(
     }),
     async run({ input, signal }) {
       signal?.throwIfAborted();
-      const inspection = budget.consume('list_files');
-      const entries = await repository.list(input.path, input.depth);
-      return {
+      const inspection: InspectionMetadata = budget.consume('list_files');
+      const inputSummary = summarizeInput({
         path: input.path,
-        entries: entries.slice(0, 500),
-        truncated: entries.length > 500,
-        inspection,
-      };
+        depth: input.depth,
+      });
+      try {
+        const entries = await repository.list(input.path, input.depth);
+        const result = {
+          path: input.path,
+          entries: entries.slice(0, MAX_RETURNED_ENTRIES),
+          truncated: entries.length > MAX_RETURNED_ENTRIES,
+          inspection,
+        };
+        debug.log({
+          tool: 'list_files',
+          status: 'success',
+          inputSummary,
+          count: result.entries.length,
+          inspection,
+        });
+        return result;
+      } catch (error) {
+        debug.log({
+          tool: 'list_files',
+          status: 'error',
+          inputSummary,
+          inspection,
+        });
+        throw wrapWithBudget(error, 'list_files', inspection);
+      }
     },
   });
 }

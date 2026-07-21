@@ -6,6 +6,7 @@ import repositoryAnalysis from '../skills/analyzing-repositories/SKILL.md' with 
 import { createListFilesTool } from '../tools/list-files.ts';
 import { createReadFileTool } from '../tools/read-file.ts';
 import {
+  createDebugLogger,
   createRepositoryReader,
   createStepBudget,
   parseMaxSteps,
@@ -16,6 +17,7 @@ type Environment = {
   REPOSITORY_PATH?: string;
   REPO_ASSISTANT_MAX_STEPS?: string;
   REPO_ASSISTANT_MODEL?: string;
+  REPO_ASSISTANT_DEBUG?: string;
 };
 
 export const description =
@@ -26,13 +28,14 @@ export default defineAgent<Environment>(async ({ env }) => {
     env.REPOSITORY_PATH ?? '../oak',
   );
   const budget = createStepBudget(parseMaxSteps(env.REPO_ASSISTANT_MAX_STEPS));
+  const debug = createDebugLogger(env.REPO_ASSISTANT_DEBUG === 'true');
 
   return {
     model: env.REPO_ASSISTANT_MODEL ?? 'openrouter/qwen/qwen3-coder',
     tools: [
-      createListFilesTool(repository, budget),
-      createReadFileTool(repository, budget),
-      createSearchCodeTool(repository, budget),
+      createListFilesTool(repository, budget, debug),
+      createReadFileTool(repository, budget, debug),
+      createSearchCodeTool(repository, budget, debug),
     ],
     sandbox: restrictedSandbox,
     skills: [repositoryAnalysis],
@@ -43,6 +46,20 @@ export default defineAgent<Environment>(async ({ env }) => {
     instructions: `
 You are a read-only repository analysis agent. Analyze only the configured
 repository through list_files, read_file, and search_code.
+
+Tool selection:
+- Use list_files when the repository structure or a file path is unknown.
+- Use search_code when looking for a symbol, phrase, configuration, or
+  implementation whose path is unknown.
+- Use read_file when an exact file is already known and surrounding context is
+  needed.
+- Do not call list_files before every task. Do not read a file merely because
+  its filename looks relevant.
+- Search results are leads, not proof; read the relevant files before making
+  architectural claims.
+- Stop using tools once sufficient evidence has been collected.
+- Answer directly when the question is conceptual and needs no repository
+  evidence.
 
 Repository rules:
 - Base every repository-specific claim on tool results from this run.
@@ -57,10 +74,10 @@ Repository rules:
   a cross-file flow.
 - Do not use task or delegate work. This basic agent has no declared subagents.
 
-The three tools share a strict inspection budget of ${budget.max} calls. Each
-tool result reports the remaining count. Plan before acting, stop calling tools
-as soon as evidence is sufficient, and answer immediately when no calls remain.
-Do not retry after a budget-exhausted error.
+The three tools share a strict inspection budget of ${budget.limit} calls. Each
+tool result reports used, remaining, and limit. Plan before acting, stop
+calling tools as soon as evidence is sufficient, and answer immediately when no
+calls remain. Do not retry after a budget-exhausted error.
 `,
   };
 });

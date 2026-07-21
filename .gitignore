@@ -5,3 +5,8 @@ dist/
 !.env.example
 coverage/
 *.log
+
+# Keep the bundled evaluation fixture (including its node_modules noise, which
+# the tools are expected to skip at runtime).
+!eval/fixtures/
+!eval/fixtures/**

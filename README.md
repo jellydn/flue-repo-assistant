@@ -103,6 +103,7 @@ exists.
 | `REPOSITORY_PATH`          | `../oak`                      | Only repository the tools may inspect      |
 | `REPO_ASSISTANT_MODEL`     | `openrouter/qwen/qwen3-coder` | Flue model specifier                       |
 | `REPO_ASSISTANT_MAX_STEPS` | `8`                           | Shared list/read/search call budget (1–20) |
+| `REPO_ASSISTANT_DEBUG`     | `false`                       | Log one safe line per tool call            |
 
 To inspect another checkout:
 
@@ -116,7 +117,10 @@ REPOSITORY_PATH=/absolute/path/to/repo \
 Every `list_files`, `read_file`, or `search_code` call consumes one shared
 inspection step. Tool results include `used` and `remaining`; after the limit,
 all three tools reject further calls and the instructions require the agent to
-answer from collected evidence. The agent also configures a 120-second
+answer from collected evidence. Each tool result carries an `inspection`
+object of the shape `{ used, remaining, limit }` so the model can see whether
+it may continue; errors are wrapped with the same snapshot. The agent also
+configures a 120-second
 submission deadline and allows only the initial execution attempt. Flue checks
 the deadline cooperatively at turn boundaries; it does not preempt an in-flight
 model request or custom tool, so elapsed runtime can exceed two minutes.
@@ -154,6 +158,98 @@ Path checks assume the inspected checkout is stable while a tool call runs. Do
 not use this educational agent against a repository tree being concurrently
 modified by an untrusted process.
 
+## Day 16: Tools for agents
+
+This section documents the Day 16 learning focus: **file tools, search tools,
+API/tool contracts, correct tool selection, and feeding tool results back into
+the agent loop.**
+
+### When to select each tool
+
+| Tool | Select when |
+| ---- | ----------- |
+| `list_files` | The repository structure or a file path is unknown. |
+| `search_code` | You are looking for a symbol, phrase, configuration, or implementation whose path is unknown. |
+| `read_file` | An exact file path is already known and surrounding context is needed. |
+
+Selection rules baked into the agent instructions and the
+`analyzing-repositories` skill:
+
+- Do not call `list_files` before every task.
+- Do not read a file merely because its filename looks relevant.
+- Search results are leads, not proof; read the relevant files before making
+  architectural claims.
+- Stop using tools once sufficient evidence has been collected.
+- Answer directly when the question is conceptual and needs no repository
+  evidence.
+
+### How structured output feeds back into the loop
+
+Every tool returns a structured JSON result plus an `inspection` budget
+snapshot:
+
+```json
+{
+  "path": "src/config.ts",
+  "startLine": 1,
+  "endLine": 4,
+  "totalLines": 5,
+  "content": "1: export const PORT = ...\n2: ...",
+  "truncated": false,
+  "inspection": { "used": 1, "remaining": 7, "limit": 8 }
+}
+```
+
+The model observes the result, reflects on whether it has enough evidence, and
+either calls the next tool or answers. `search_code` results name candidate
+files and line numbers; the model then calls `read_file` on the strongest
+candidate. `inspection.remaining` tells the model whether it can keep
+inspecting. When the budget is exhausted, every tool rejects further calls with
+an error that repeats the snapshot, and the agent answers from collected
+evidence.
+
+### Evaluation scenarios
+
+A tiny fixture repository and runner live in [`eval/`](./eval/README.md). The
+five scenarios:
+
+| Scenario | Prompt | Expected tool pattern |
+| -------- | ------ | --------------------- |
+| A: direct read | Read `src/config.ts` and explain how the port is configured. | `read_file` |
+| B: search then read | Find where user authentication is implemented and explain the flow. | `search_code` → `read_file` |
+| C: structure discovery | Give me a high-level overview of this repository. | `list_files` → selected `read_file` calls |
+| D: negative search | Where is payment processing implemented? | `search_code` → `read_file`; report no evidence, do not invent |
+| E: no unnecessary tool | What is the difference between listing files and searching code? | Answer directly, no tool call |
+
+The expected tool sequences are simulated deterministically in
+`tests/eval-scenarios.test.ts`. Run the live model-driven version with:
+
+```bash
+./eval/run-eval.sh   # requires a provider key; logs the observed tool sequence
+```
+
+### Safe debug logs
+
+Enable with `REPO_ASSISTANT_DEBUG=true`. Each tool call logs one line to
+stderr:
+
+```
+[repo-assistant] read_file success input={"path":"src/config.ts","startLine":1} count=4 used=1 remaining=7/8
+```
+
+Debug logs contain only the tool name, a sanitized input summary, success or
+failure, a result count, and the budget snapshot. They never log provider API
+keys, file contents, absolute repository paths, or model reasoning.
+
+### Learning notes
+
+1. Tool names and descriptions form an API for the model; precise contracts
+   improve tool selection.
+2. Search results are evidence candidates, while file reads provide the context
+   needed for grounded conclusions.
+3. Agent safety depends on controls outside the model, including path
+   confinement, output bounds, timeouts, and a shared tool budget.
+
 ## Project structure
 
 ```text
@@ -169,7 +265,14 @@ flue-repo-assistant/
 │   └── analyzing-repositories/
 │       └── SKILL.md
 ├── tests/
-│   └── repository.test.ts
+│   ├── eval-scenarios.test.ts
+│   ├── helpers.ts
+│   ├── repository.test.ts
+│   └── tools.test.ts
+├── eval/
+│   ├── README.md
+│   ├── run-eval.sh
+│   └── fixtures/sample-repo/   # bundled evaluation fixture
 ├── sandbox.ts
 ├── flue.config.ts
 └── README.md

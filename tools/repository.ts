@@ -52,15 +52,80 @@ const searchableExtensions = new Set([
   '.yml',
 ]);
 
-export type BudgetSnapshot = {
-  max: number;
+export type InspectionMetadata = {
   used: number;
   remaining: number;
+  limit: number;
 };
 
-export type StepBudget = BudgetSnapshot & {
-  consume(toolName: string): BudgetSnapshot;
+/**
+ * Shared inspection budget consumed by every list_files, read_file, and
+ * search_code call. The snapshot returned by `consume` is attached to each
+ * tool result so the model can see whether it may continue.
+ */
+export type StepBudget = {
+  limit: number;
+  used: number;
+  remaining: number;
+  consume(toolName: string): InspectionMetadata;
 };
+
+export type DebugEvent = {
+  tool: string;
+  status: 'success' | 'error';
+  inputSummary: string;
+  count?: number;
+  inspection: InspectionMetadata;
+};
+
+export type DebugLogger = {
+  log(event: DebugEvent): void;
+};
+
+/**
+ * Safe debug logger controlled by REPO_ASSISTANT_DEBUG. Logs only the tool
+ * name, a sanitized input summary, success/failure, a result count, and the
+ * budget snapshot. Never logs file contents, absolute paths, keys, or model
+ * reasoning.
+ */
+export function createDebugLogger(enabled: boolean): DebugLogger {
+  return {
+    log(event) {
+      if (!enabled) return;
+      const count =
+        event.count === undefined ? '' : ` count=${event.count}`;
+      console.error(
+        `[repo-assistant] ${event.tool} ${event.status} input=${event.inputSummary}${count} used=${event.inspection.used} remaining=${event.inspection.remaining}/${event.inspection.limit}`,
+      );
+    },
+  };
+}
+
+/**
+ * Render a tool input as a short, safe JSON summary for debug logs. Inputs are
+ * repository-relative, so no absolute host path should appear; the length cap
+ * keeps log lines bounded regardless.
+ */
+export function summarizeInput(value: unknown): string {
+  const text = JSON.stringify(value) ?? '';
+  return text.length > 200 ? `${text.slice(0, 197)}...` : text;
+}
+
+/**
+ * Wrap a tool failure with the post-consumption budget snapshot so the model
+ * can see whether any inspection budget remains after the error.
+ */
+export function wrapWithBudget(
+  error: unknown,
+  tool: string,
+  inspection: InspectionMetadata,
+): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(
+    `${tool} failed: ${message} (inspection: used=${inspection.used}, remaining=${inspection.remaining}, limit=${inspection.limit})`,
+    { cause: error instanceof Error ? error : undefined },
+  );
+}
 
 export type RepositoryEntry = {
   path: string;
@@ -81,7 +146,7 @@ export function parseMaxSteps(value: string | undefined): number {
 export function createStepBudget(max: number): StepBudget {
   let used = 0;
   return {
-    max,
+    limit: max,
     get used() {
       return used;
     },
@@ -91,11 +156,11 @@ export function createStepBudget(max: number): StepBudget {
     consume(toolName) {
       if (used >= max) {
         throw new Error(
-          `Inspection budget exhausted before ${toolName}; answer with the evidence already collected.`,
+          `Inspection budget exhausted before ${toolName}; answer with the evidence already collected. (used=${used}, remaining=0, limit=${max})`,
         );
       }
       used += 1;
-      return { max, used, remaining: max - used };
+      return { limit: max, used, remaining: max - used };
     },
   };
 }

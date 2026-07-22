@@ -250,12 +250,107 @@ keys, file contents, absolute repository paths, or model reasoning.
 3. Agent safety depends on controls outside the model, including path
    confinement, output bounds, timeouts, and a shared tool budget.
 
+## Day 17: Planning vs Execution
+
+This section documents the Day 17 learning focus: **separating reasoning from
+execution**. Before calling any inspection tool, the agent declares a short
+3–5 step plan, executes each step, then reflects on whether the plan was
+optimal.
+
+### Architecture
+
+```text
+User question
+   │
+   ▼
+create_plan  ──▶  Plan stored (3–5 steps)
+   │
+   ▼
+Execute each step
+   ├── Step 1 → search_code
+   ├── Step 2 → read_file
+   ├── Step 3 → read_file
+   └── Step 4 → answer (no tool call)
+   │
+   ▼
+reflect_plan  ──▶  "Could Step 2 and 3 be merged?"
+   │
+   ▼
+Final answer
+```
+
+If a step returns no results, `replan` generates a revised plan before
+continuing—the stretch-goal dynamic replanning loop.
+
+### Planning tools
+
+| Tool | Consumes budget? | Purpose |
+| ---- | ---------------- | ------- |
+| `create_plan` | No | Declare 3–5 steps before executing |
+| `replan` | No | Revise the plan when a step returns no results |
+| `reflect_plan` | No | State whether steps could be simplified or merged |
+
+The three inspection tools (`list_files`, `read_file`, `search_code`) still
+consume the shared budget as before. Planning tools are meta-tools that
+structure the agent's reasoning without inspecting the repository.
+
+### Programmatic planner and executor
+
+The `planner/` module also provides deterministic functions for testing:
+
+- `createPlan(question)` — rule-based plan generation (maps question patterns
+  to tool sequences)
+- `executePlan(plan, tools, budget, debug)` — runs each step against the
+  matching tool
+- `shouldReplan(results)` / `replan(plan, results)` — detects empty results
+  and produces a revised plan
+- `reflectOnPlan(plan, results, couldSimplify, note)` — counts statuses and
+  records the reflection
+
+These let tests run without a provider key while proving the same contracts
+the model uses.
+
+### Evaluation scenarios
+
+The Day 16 evaluation scenarios still apply, now with a planning step first:
+
+| Scenario | Plan | Execution |
+| -------- | ---- | --------- |
+| A: direct read | `create_plan` → [read_file, answer] | `read_file` |
+| B: search then read | `create_plan` → [search_code, read_file, answer] | `search_code` → `read_file` |
+| C: structure discovery | `create_plan` → [list_files, read_file, answer] | `list_files` → `read_file` |
+| D: negative search | `create_plan` → [search_code, answer] → `replan` | `search_code` (empty) → `replan` → `search_code` → `read_file` |
+| E: conceptual | `create_plan` → [answer] | no tool call |
+
+Run with debug to see the plan-execute-reflect cycle:
+
+```bash
+REPOSITORY_PATH=./eval/fixtures/sample-repo REPO_ASSISTANT_DEBUG=true \
+  npm start -- --input '{"message":"Find where user authentication is implemented."}'
+```
+
+### Learning notes
+
+1. Planning before tool execution reduced unnecessary tool calls and made the
+   agent's behavior more predictable.
+2. Separating the planner from the executor simplified debugging because each
+   execution step could be inspected independently.
+3. The initial 3–5 step plan was usually sufficient, but adding a simple
+   replanning mechanism made the agent more robust when a search returned no
+   useful results.
+
 ## Project structure
 
 ```text
 flue-repo-assistant/
 ├── agents/
 │   └── repo-assistant.ts
+├── planner/
+│   ├── executor.ts
+│   ├── plan-store.ts
+│   ├── planner.ts
+│   ├── reflection.ts
+│   └── types.ts
 ├── tools/
 │   ├── list-files.ts
 │   ├── read-file.ts
@@ -267,6 +362,7 @@ flue-repo-assistant/
 ├── tests/
 │   ├── eval-scenarios.test.ts
 │   ├── helpers.ts
+│   ├── planner.test.ts
 │   ├── repository.test.ts
 │   └── tools.test.ts
 ├── eval/

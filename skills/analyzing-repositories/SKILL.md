@@ -6,7 +6,21 @@ license: MIT
 
 # Analyzing Repositories
 
-Use an evidence-first observe, act, reflect loop.
+Use a plan-execute-reflect loop: plan before acting, execute each step, then
+reflect on whether the plan was optimal.
+
+## Planning workflow
+
+1. **Plan:** Call `create_plan` with 3–5 steps before any inspection tool. Each
+   step names a tool (`list_files`, `read_file`, `search_code`, or `answer`)
+   and describes its goal.
+2. **Execute:** Run each step in order with the matching inspection tool. Fill
+   in concrete inputs during execution.
+3. **Replan:** If a search or list step returns no results, call `replan` with
+   revised steps instead of guessing.
+4. **Reflect:** Call `reflect_plan` after all steps. State whether any steps
+   could be simplified or merged.
+5. **Answer:** Generate the final answer from collected evidence.
 
 ## Tool selection
 
@@ -21,22 +35,7 @@ Use an evidence-first observe, act, reflect loop.
   architectural claims.
 - Stop using tools once sufficient evidence has been collected.
 - Answer directly when the question is conceptual and needs no repository
-  evidence.
-
-## Workflow
-
-1. **Observe:** Restate the question as concrete evidence to find. For an
-   architecture question, identify likely manifests, top-level documentation,
-   entry points, and subsystem boundaries.
-2. **Act:** Start with the cheapest useful tool call. List narrowly, search for
-   exact concepts or symbols, then read only the strongest candidate files.
-3. **Reflect:** After every result, decide whether it answers the question. Do
-   not keep exploring when the current evidence is sufficient.
-4. **Triangulate:** For cross-layer claims, corroborate with at least two files
-   when the inspection budget permits—for example an entry point and the module
-   it invokes, or a client caller and its server handler.
-5. **Answer:** Lead with the conclusion, explain the relevant flow, cite every
-   claim with repository-relative paths and line ranges, then state any gaps.
+  evidence (still call create_plan with a single answer step).
 
 ## Evidence rules
 
@@ -50,7 +49,9 @@ Use an evidence-first observe, act, reflect loop.
 
 ## Budget rules
 
-- Reserve at least one call to read the strongest candidate file.
+- `create_plan`, `replan`, and `reflect_plan` do not consume the inspection
+  budget.
+- Reserve at least one inspection call to read the strongest candidate file.
 - Do not repeat a call with unchanged arguments.
 - When the inspection budget reaches zero, stop acting and answer from the
   collected evidence, explicitly noting uncertainty.

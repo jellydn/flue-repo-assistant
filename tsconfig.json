@@ -14,6 +14,7 @@
   "include": [
     "agents/**/*.ts",
     "planner/**/*.ts",
+    "reliability/**/*.ts",
     "tools/**/*.ts",
     "tests/**/*.ts",
     "sandbox.ts",

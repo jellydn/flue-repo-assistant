@@ -339,6 +339,130 @@ REPOSITORY_PATH=./eval/fixtures/sample-repo REPO_ASSISTANT_DEBUG=true \
    replanning mechanism made the agent more robust when a search returned no
    useful results.
 
+## Day 18: Production reliability
+
+This section documents the Day 18 learning focus: **retries, timeouts, and
+fallbacks**. The agent hardens one complete tool workflow (user question →
+tool call → context → answer) so it fails safely and informs the user clearly.
+
+### Reliability policy
+
+| Aspect | Value | Configurable via |
+| ------ | ----- | ---------------- |
+| Max attempts | 3 | `REPO_ASSISTANT_MAX_ATTEMPTS` |
+| Initial backoff | 500 ms | `REPO_ASSISTANT_INITIAL_DELAY_MS` |
+| Max backoff | 5 s | `REPO_ASSISTANT_MAX_DELAY_MS` |
+| Per-operation timeout | 15 s | `REPO_ASSISTANT_TIMEOUT_MS` |
+| Backoff strategy | Exponential with full jitter | — |
+
+#### Retried (transient) failures
+
+- HTTP 408 (request timeout)
+- HTTP 429 (rate limit)
+- HTTP 500, 502, 503, 504
+- Connection resets (`ECONNRESET`, `ECONNREFUSED`)
+- Operation timeouts (`ETIMEDOUT`, `ECONNABORTED`)
+
+#### Not retried (permanent) failures
+
+- Authentication failures (HTTP 401)
+- Permission errors (HTTP 403, `EACCES`, `EPERM`)
+- File not found (HTTP 404, `ENOENT`)
+- Invalid tool responses (malformed, missing fields, oversized)
+- Schema validation failures
+
+### Error classification
+
+| Error type | Category | Retryable | User message |
+| ---------- | -------- | --------- | ------------ |
+| `TimeoutError` | timeout | yes | "The repository service timed out." |
+| `RateLimitError` | rate_limit | yes | "Rate limited. Please retry shortly." |
+| `AuthenticationError` | authentication | no | "Check that the API key is valid." |
+| `PermissionError` | permission | no | "Permission denied." |
+| `NotFoundError` | not_found | no | "File does not exist or is not accessible." |
+| `InvalidToolResponseError` | invalid_tool_response | no | "Unexpected response, result discarded." |
+| `ExternalServiceError` | external_service | yes | "Service temporarily unavailable." |
+
+### Tool-output validation
+
+Every tool result is validated before returning to the agent:
+
+- **Missing required fields** → `InvalidToolResponseError`
+- **Malformed shapes** → `InvalidToolResponseError`
+- **Oversized content** (> 200k chars) → `InvalidToolResponseError`
+- **Empty search results** → returned as a controlled result (not an error)
+
+### Fallback behaviour
+
+1. Attempt `search_code` (primary).
+2. If search fails with a transient error and a known path is available,
+   attempt `read_file` (fallback).
+3. If both fail, return a clear partial-response message: "Repository search
+   is temporarily unavailable and the fallback file read also failed."
+4. Permanent errors (auth, permission, not-found) do **not** trigger fallback.
+5. The agent never fabricates repository information.
+
+### User-facing errors
+
+Errors returned to the model (and ultimately the user) are safe:
+
+- No stack traces, provider internals, API keys, or raw error objects.
+- Concise messages with retry guidance and partial-answer indicators.
+- Examples: "The repository service timed out after three attempts."
+  "I could not access that file because it does not exist."
+  "Repository search is temporarily unavailable. I could not verify the answer."
+
+### Observability
+
+When `REPO_ASSISTANT_DEBUG=true`, each retry attempt logs a structured JSON
+event to stderr:
+
+```json
+{"operation":"search_code","attempt":1,"maxAttempts":3,"durationMs":42,
+ "errorCategory":"external_service","retried":false,"fallbackUsed":false,
+ "outcome":"error"}
+```
+
+Logged fields: operation name, attempt number, max attempts, duration, error
+category, whether retried, whether fallback was used, and final outcome. Never
+logs secrets, tokens, file contents, or sensitive prompts.
+
+### Failure-injection demo
+
+```bash
+./demo/reliability-demo.sh        # run all scenarios
+./demo/reliability-demo.sh 1      # recover from transient failure
+./demo/reliability-demo.sh 2      # timeout simulation
+./demo/reliability-demo.sh 3      # malformed response
+./demo/reliability-demo.sh 4      # baseline (no failures)
+```
+
+Environment variables for failure injection:
+
+| Variable | Effect |
+| -------- | ------ |
+| `FAIL_FIRST_N_REQUESTS=2` | First N calls fail with a simulated 503 |
+| `SIMULATE_TOOL_TIMEOUT=true` | Operations hang until the timeout fires |
+| `SIMULATE_MALFORMED_RESPONSE=true` | Return garbled output instead of real data |
+| `FAIL_OPERATION=search_code` | Restrict failure to one operation |
+
+### Budget interaction
+
+Retries do **not** consume additional inspection budget. The reliability
+wrapper consumes one budget slot per logical call; retry attempts use a
+pass-through budget internally. This prevents retries from accidentally
+multiplying budget consumption.
+
+### Learning notes
+
+1. Planning before tool execution reduced unnecessary tool calls and made the
+   agent's behavior more predictable.
+2. Separating the planner from the executor simplified debugging because each
+   execution step could be inspected independently.
+3. The initial 3–5 step plan was usually sufficient, but adding a simple
+   replanning mechanism made the agent more robust when a search returned no
+   useful results.
+
 ## Project structure
 
 ```text
@@ -351,6 +475,14 @@ flue-repo-assistant/
 │   ├── planner.ts
 │   ├── reflection.ts
 │   └── types.ts
+├── reliability/
+│   ├── errors.ts
+│   ├── failure-injection.ts
+│   ├── fallback.ts
+│   ├── observability.ts
+│   ├── resilient-tool.ts
+│   ├── retry.ts
+│   └── validation.ts
 ├── tools/
 │   ├── list-files.ts
 │   ├── read-file.ts
@@ -363,8 +495,11 @@ flue-repo-assistant/
 │   ├── eval-scenarios.test.ts
 │   ├── helpers.ts
 │   ├── planner.test.ts
+│   ├── reliability.test.ts
 │   ├── repository.test.ts
 │   └── tools.test.ts
+├── demo/
+│   └── reliability-demo.sh
 ├── eval/
 │   ├── README.md
 │   ├── run-eval.sh

@@ -96,3 +96,26 @@ budget used: 0 remaining: 8
 A live model-driven run was not executed here because this environment has no
 provider API key. Run `./run-eval.sh` with a key to record the model's actual
 choices; compare them against the sequences above.
+
+## Day 17: Planning vs Execution
+
+The agent now follows a **plan → execute → reflect** workflow. The eval
+scenarios above are still valid, but the observed debug output will include
+`create_plan` before the first inspection tool and `reflect_plan` at the end:
+
+```
+[repo-assistant] create_plan success input={"question":"...","stepCount":3} count=3 used=0 remaining=8/8
+[repo-assistant] search_code success ... used=1 remaining=7/8
+[repo-assistant] read_file success ... used=2 remaining=6/8
+[repo-assistant] reflect_plan success ... used=2 remaining=6/8
+```
+
+If a search returns no results, a `replan` line appears:
+
+```
+[repo-assistant] replan success input={"reason":"...","stepCount":2} count=2 used=N remaining=M/8
+```
+
+The planning tools (`create_plan`, `replan`, `reflect_plan`) do NOT consume the
+inspection budget—they structure the agent's reasoning without inspecting the
+repository.

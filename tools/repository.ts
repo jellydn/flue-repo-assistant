@@ -68,6 +68,8 @@ export type StepBudget = {
   used: number;
   remaining: number;
   consume(toolName: string): InspectionMetadata;
+  /** Read the current budget state without consuming a step. */
+  snapshot(): InspectionMetadata;
 };
 
 export type DebugEvent = {
@@ -160,6 +162,9 @@ export function createStepBudget(max: number): StepBudget {
         );
       }
       used += 1;
+      return { limit: max, used, remaining: max - used };
+    },
+    snapshot() {
       return { limit: max, used, remaining: max - used };
     },
   };

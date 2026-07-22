@@ -7,6 +7,7 @@ import { createListFilesTool } from '../tools/list-files.ts';
 import { createReadFileTool } from '../tools/read-file.ts';
 import {
   createDebugLogger,
+  createPassThroughBudget,
   createRepositoryReader,
   createStepBudget,
   parseMaxSteps,
@@ -16,16 +17,28 @@ import { createPlanStore } from '../planner/plan-store.ts';
 import { createPlanTool } from '../planner/planner.ts';
 import { createReplanTool } from '../planner/executor.ts';
 import { createReflectPlanTool } from '../planner/reflection.ts';
+import { createReliabilityLogger } from '../reliability/observability.ts';
+import { createFailureInjector } from '../reliability/failure-injection.ts';
+import { parseRetryConfig } from '../reliability/retry.ts';
+import { wrapToolWithReliability } from '../reliability/resilient-tool.ts';
 
 type Environment = {
   REPOSITORY_PATH?: string;
   REPO_ASSISTANT_MAX_STEPS?: string;
   REPO_ASSISTANT_MODEL?: string;
   REPO_ASSISTANT_DEBUG?: string;
+  REPO_ASSISTANT_MAX_ATTEMPTS?: string;
+  REPO_ASSISTANT_INITIAL_DELAY_MS?: string;
+  REPO_ASSISTANT_MAX_DELAY_MS?: string;
+  REPO_ASSISTANT_TIMEOUT_MS?: string;
+  FAIL_FIRST_N_REQUESTS?: string;
+  SIMULATE_TOOL_TIMEOUT?: string;
+  SIMULATE_MALFORMED_RESPONSE?: string;
+  FAIL_OPERATION?: string;
 };
 
 export const description =
-  'Answers architecture and source-code questions about one configured repository using read-only tools. Plans before executing, then reflects on the plan.';
+  'Answers architecture and source-code questions about one configured repository using read-only tools. Plans before executing, then reflects on the plan. Retries transient failures with backoff.';
 
 export default defineAgent<Environment>(async ({ env }) => {
   const repository = await createRepositoryReader(
@@ -33,7 +46,30 @@ export default defineAgent<Environment>(async ({ env }) => {
   );
   const budget = createStepBudget(parseMaxSteps(env.REPO_ASSISTANT_MAX_STEPS));
   const debug = createDebugLogger(env.REPO_ASSISTANT_DEBUG === 'true');
+  const reliabilityLog = createReliabilityLogger(
+    env.REPO_ASSISTANT_DEBUG === 'true',
+  );
+  const retryConfig = parseRetryConfig(env);
+  const injector = createFailureInjector(env);
   const planStore = createPlanStore();
+
+  // Raw inspection tools created with a pass-through budget so retries
+  // don't multiply budget consumption; the reliability wrapper consumes once.
+  const passThroughBudget = createPassThroughBudget(budget);
+  const rawListFiles = createListFilesTool(repository, passThroughBudget, debug);
+  const rawReadFile = createReadFileTool(repository, passThroughBudget, debug);
+  const rawSearchCode = createSearchCodeTool(repository, passThroughBudget, debug);
+
+  // Wrap with reliability: retry, timeout, output validation, failure injection
+  const listFiles = wrapToolWithReliability(
+    rawListFiles, budget, debug, retryConfig, reliabilityLog, injector,
+  );
+  const readFile = wrapToolWithReliability(
+    rawReadFile, budget, debug, retryConfig, reliabilityLog, injector,
+  );
+  const searchCode = wrapToolWithReliability(
+    rawSearchCode, budget, debug, retryConfig, reliabilityLog, injector,
+  );
 
   return {
     model: env.REPO_ASSISTANT_MODEL ?? 'openrouter/qwen/qwen3-coder',
@@ -42,10 +78,10 @@ export default defineAgent<Environment>(async ({ env }) => {
       createPlanTool(planStore, budget, debug),
       createReplanTool(planStore, budget, debug),
       createReflectPlanTool(planStore, budget, debug),
-      // Inspection tools (consume the shared budget)
-      createListFilesTool(repository, budget, debug),
-      createReadFileTool(repository, budget, debug),
-      createSearchCodeTool(repository, budget, debug),
+      // Inspection tools (consume shared budget, wrapped with reliability)
+      listFiles,
+      readFile,
+      searchCode,
     ],
     sandbox: restrictedSandbox,
     skills: [repositoryAnalysis],
@@ -87,6 +123,15 @@ execution: first declare a plan, then execute it, then reflect.
   evidence. A conceptual question still needs a create_plan call, but the plan
   may be a single "answer" step.
 
+## Reliability
+
+Inspection tools are wrapped with retry and timeout. Transient failures (HTTP
+408/429/5xx, connection resets, timeouts) are retried automatically with
+exponential backoff. Permanent failures (authentication, permission, not-found,
+validation) are not retried. If a tool fails after all retries, it returns a
+user-safe error message. Never fabricate information when a tool fails—report
+what could not be retrieved and answer from the evidence collected so far.
+
 ## Repository rules
 
 - Base every repository-specific claim on tool results from this run.
@@ -108,7 +153,7 @@ Only list_files, read_file, and search_code do. The three inspection tools
 share a strict budget of ${budget.limit} calls. Each inspection result reports
 used, remaining, and limit. Stop calling inspection tools when evidence is
 sufficient or the budget is exhausted. Do not retry after a budget-exhausted
-error.
+error. Retries for transient failures do NOT consume additional budget slots.
 `,
   };
 });

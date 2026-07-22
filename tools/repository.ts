@@ -170,6 +170,26 @@ export function createStepBudget(max: number): StepBudget {
   };
 }
 
+/**
+ * Create a pass-through budget that returns snapshots without incrementing
+ * the counter. Used when wrapping tools with the reliability layer: the
+ * wrapper consumes the real budget once per logical call, while the inner
+ * raw tool uses this pass-through so retries don't multiply consumption.
+ */
+export function createPassThroughBudget(budget: StepBudget): StepBudget {
+  return {
+    limit: budget.limit,
+    get used() {
+      return budget.used;
+    },
+    get remaining() {
+      return budget.remaining;
+    },
+    consume: () => budget.snapshot(),
+    snapshot: () => budget.snapshot(),
+  };
+}
+
 function isInside(root: string, candidate: string): boolean {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`);
 }

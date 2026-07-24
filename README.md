@@ -15,7 +15,9 @@ Rust-focused monorepo for privacy-preserving distributed systems.
 ## Features
 
 - One Flue agent
-- Three typed, read-only tools (`list_files`, `read_file`, `search_code`)
+- Four typed, read-only tools (`list_files`, `read_file`, `search_code`, `search_docs`)
+- Bounded investigation loop with evidence collection and deduplication
+- Grounded answers with file citations and confidence levels
 - One reusable Agent Skill
 - Repository-relative path and symlink confinement
 - Evidence-only answers with file and line citations
@@ -455,13 +457,164 @@ multiplying budget consumption.
 
 ### Learning notes
 
-1. Planning before tool execution reduced unnecessary tool calls and made the
-   agent's behavior more predictable.
-2. Separating the planner from the executor simplified debugging because each
-   execution step could be inspected independently.
-3. The initial 3–5 step plan was usually sufficient, but adding a simple
-   replanning mechanism made the agent more robust when a search returned no
-   useful results.
+1. Retrying only transient failures with exponential backoff and jitter
+   prevented cascading failures while keeping latency bounded.
+2. Typed, structured errors with user-safe messages kept provider internals
+   and stack traces out of user-facing responses.
+3. A search→read fallback preserved usefulness when the primary tool failed,
+   while permanent errors failed fast instead of hiding configuration problems.
+
+## Day 21: Doc-aware repository agent
+
+This section documents the Day 21 learning focus: **combining documentation
+search, source-code search, and file-reading into a bounded investigation loop
+that produces grounded answers with citations.**
+
+### What the doc-aware agent does
+
+A user asks a repository question (e.g., "How does authentication work?"). The
+agent:
+
+1. Creates a short investigation plan.
+2. Searches documentation files (README, AGENTS, CHANGELOG, docs/**, Markdown).
+3. Searches the source code.
+4. Reads the most relevant files.
+5. Stops when it has enough evidence.
+6. Returns a concise answer with exact file references.
+7. Clearly states when the evidence is insufficient.
+
+### Architecture
+
+```text
+User question
+     │
+     ▼
+Planner / Agent loop (max 5 iterations)
+     │
+     ├──▶ search_docs   (documentation files: README, AGENTS, docs/**)
+     │
+     ├──▶ search_code   (source files: .ts, .js, .py, etc.)
+     │
+     ├──▶ read_file     (specific file with line range)
+     │
+     └──▶ list_files    (structure discovery)
+     │
+     ▼
+Evidence collector (deduplicated, size-limited)
+     │
+     ▼
+Grounded answer with citations + confidence
+```
+
+### Available tools
+
+| Tool | Consumes budget? | Purpose |
+| ---- | ---------------- | ------- |
+| `search_docs` | Yes | Search documentation files for a literal string |
+| `search_code` | Yes | Search source files for a literal string |
+| `read_file` | Yes | Read a bounded line range from a known file |
+| `list_files` | Yes | List files and directories under a path |
+| `create_plan` | No | Declare a 3–5 step plan before executing |
+| `replan` | No | Revise the plan when a step returns no results |
+| `reflect_plan` | No | Reflect on whether steps could be simplified |
+
+`search_docs` searches files with documentation extensions (`.md`, `.markdown`,
+`.txt`) and documentation basenames (README, AGENTS, SOUL, CHANGELOG,
+CONTRIBUTING, LICENSE). It excludes the same ignored directories as
+`search_code` (node_modules, dist, .git, etc.).
+
+### Planning-loop limits
+
+- Maximum **5 investigation iterations** (tool calls).
+- No repeated identical tool + arguments calls (blocked by the call tracker).
+- Evidence is deduplicated by file path + line range.
+- The loop stops early when the decider determines sufficient evidence exists.
+- Failed tool calls become error entries — they never crash the loop.
+- Budget exhaustion stops the loop immediately.
+
+### How citations work
+
+Every key finding in the final answer includes a citation in the format
+`path/to/file.ts:startLine-endLine`. The agent only cites files whose content
+was actually retrieved by a tool in the current run — it never fabricates
+citations.
+
+Confidence levels:
+
+| Level | When |
+| ----- | ---- |
+| High | Read evidence from 2+ files, or both documentation and code corroborate |
+| Medium | Read evidence from a single file |
+| Low | Only search leads (no confirming file reads) |
+| Insufficient | No relevant evidence found |
+
+When confidence is not High, the answer explains what evidence is missing.
+When evidence is insufficient, the agent explicitly says so rather than
+hallucinating.
+
+### How to run the demo
+
+```bash
+./demo/doc-aware-demo.sh              # all scenarios
+./demo/doc-aware-demo.sh auth         # only auth-related scenarios
+./demo/doc-aware-demo.sh payment      # only the negative-search scenario
+```
+
+The demo uses deterministic decision functions (no LLM required) and the
+bundled fixture repository. Each scenario displays the question, tools used,
+cited files, answer, confidence, and whether the run completed successfully.
+
+Sample output:
+
+```
+Scenario: Authentication flow (docs + code)
+  Tools used:   search_docs → search_code → read_file
+  Cited files:  AGENTS.md:1-7, src/auth.ts:1-7, docs/architecture.md:7
+  Confidence:   High
+  Success:      true
+```
+
+### How to run tests
+
+```bash
+npm test                              # all tests
+npx tsx --test tests/doc-aware.test.ts  # only Day 21 tests
+```
+
+The Day 21 test suite covers:
+
+1. Documentation search finds relevant Markdown files.
+2. Documentation search excludes irrelevant directories.
+3. The agent uses documentation and code evidence together.
+4. Repeated identical tool calls are blocked.
+5. The loop stops at the configured maximum.
+6. The agent stops early when sufficient evidence exists.
+7. Failed tool calls do not crash the loop.
+8. Answers contain file citations.
+9. The agent returns insufficient evidence instead of hallucinating.
+10. Confidence reflects the available evidence.
+
+### Known limitations
+
+- The investigation loop uses deterministic decision functions for testing.
+  A live LLM run requires a provider API key and is non-deterministic.
+- Flue does not expose a public `maxSteps`/`maxTurns` option; the 5-iteration
+  limit is enforced by the programmatic loop, not by Flue's runtime.
+- `search_docs` treats `.md`, `.markdown`, and `.txt` as documentation. Other
+  text formats (`.rst`, `.org`) are not yet included.
+- Evidence excerpts are truncated to 500 characters; very long file reads may
+  lose detail in the evidence collector.
+- The confidence heuristic is rule-based, not semantic; it does not assess
+  whether the evidence actually answers the question.
+
+### Learning notes
+
+1. Combining documentation and code evidence produces more grounded answers
+   than either source alone — docs explain intent, code confirms implementation.
+2. A bounded investigation loop with duplicate-call blocking and early stopping
+   prevents wasted tool calls while ensuring sufficient evidence collection.
+3. Structured citations and confidence levels make the agent's answers
+   auditable — users can verify every claim against the cited file.
 
 ## Project structure
 
@@ -469,6 +622,12 @@ multiplying budget consumption.
 flue-repo-assistant/
 ├── agents/
 │   └── repo-assistant.ts
+├── investigation/
+│   ├── answer.ts
+│   ├── call-tracker.ts
+│   ├── evidence.ts
+│   ├── loop.ts
+│   └── types.ts
 ├── planner/
 │   ├── executor.ts
 │   ├── plan-store.ts
@@ -487,11 +646,13 @@ flue-repo-assistant/
 │   ├── list-files.ts
 │   ├── read-file.ts
 │   ├── repository.ts
-│   └── search-code.ts
+│   ├── search-code.ts
+│   └── search-docs.ts
 ├── skills/
 │   └── analyzing-repositories/
 │       └── SKILL.md
 ├── tests/
+│   ├── doc-aware.test.ts
 │   ├── eval-scenarios.test.ts
 │   ├── helpers.ts
 │   ├── planner.test.ts
@@ -499,6 +660,8 @@ flue-repo-assistant/
 │   ├── repository.test.ts
 │   └── tools.test.ts
 ├── demo/
+│   ├── doc-aware-demo.sh
+│   ├── doc-aware-demo.ts
 │   └── reliability-demo.sh
 ├── eval/
 │   ├── README.md

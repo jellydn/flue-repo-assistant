@@ -55,6 +55,11 @@ export function createPlan(question: string): Plan {
   if (asksForOverview(lower)) {
     return normalizePlan(question, [
       {
+        description: 'Search documentation for architecture and overview',
+        tool: 'search_docs',
+        input: { query: 'architecture', path: '.', caseSensitive: false },
+      },
+      {
         description: 'List repository structure to identify key files',
         tool: 'list_files',
         input: { path: '.', depth: 2 },
@@ -64,6 +69,33 @@ export function createPlan(question: string): Plan {
         tool: 'read_file',
       },
       { description: 'Summarize the architecture', tool: 'answer' },
+    ]);
+  }
+
+  // Documentation-leaning questions: how/what/why about configuration,
+  // deployment, environment, etc.
+  if (asksAboutDocs(lower)) {
+    const query = extractSearchQuery(question);
+    return normalizePlan(question, [
+      {
+        description: `Search documentation for "${query}"`,
+        tool: 'search_docs',
+        input: { query, path: '.', caseSensitive: false },
+      },
+      {
+        description: `Search source code for "${query}"`,
+        tool: 'search_code',
+        input: { query, path: '.', caseSensitive: false },
+      },
+      {
+        description: 'Read the most relevant documentation file',
+        tool: 'read_file',
+      },
+      {
+        description: 'Read the most relevant source file',
+        tool: 'read_file',
+      },
+      { description: 'Summarize the findings with citations', tool: 'answer' },
     ]);
   }
 
@@ -115,6 +147,27 @@ function asksForOverview(lower: string): boolean {
   );
 }
 
+const DOC_QUESTION_MARKERS = [
+  'how is',
+  'how does',
+  'how are',
+  'what is',
+  'which environment',
+  'environment variable',
+  'deployment',
+  'configured',
+  'configuration',
+  'documented',
+  'documentation',
+  'external service',
+  'api endpoint',
+  'background job',
+];
+
+function asksAboutDocs(lower: string): boolean {
+  return DOC_QUESTION_MARKERS.some((marker) => lower.includes(marker));
+}
+
 function extractSearchQuery(question: string): string {
   // Strip common question words and use the remainder as the query.
   const cleaned = question
@@ -132,7 +185,7 @@ function extractSearchQuery(question: string): string {
 
 const planStepSchema = v.object({
   description: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
-  tool: v.picklist(['list_files', 'read_file', 'search_code', 'answer']),
+  tool: v.picklist(['list_files', 'read_file', 'search_code', 'search_docs', 'answer']),
   input: v.optional(v.record(v.string(), v.union([v.string(), v.number(), v.boolean(), v.null()]))),
 });
 

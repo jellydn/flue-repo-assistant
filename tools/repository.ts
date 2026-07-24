@@ -52,6 +52,19 @@ const searchableExtensions = new Set([
   '.yml',
 ]);
 
+/** Extensions treated as documentation by search_docs. */
+const documentationExtensions = new Set(['.md', '.markdown', '.txt']);
+
+/** Basenames (without extension) treated as documentation even without a known doc extension. */
+const documentationBasenames = new Set([
+  'readme',
+  'agents',
+  'soul',
+  'changelog',
+  'license',
+  'contributing',
+]);
+
 export type InspectionMetadata = {
   used: number;
   remaining: number;
@@ -283,6 +296,27 @@ export class RepositoryReader {
           entry.size <= MAX_FILE_BYTES &&
           searchableExtensions.has(path.extname(entry.path).toLowerCase()),
       )
+      .slice(0, MAX_WALK_FILES)
+      .map((entry) => entry.path);
+  }
+
+  /**
+   * Return documentation files (Markdown, text, README/AGENTS/SOUL/CHANGELOG)
+   * under the given path. Excludes the same ignored directories as
+   * {@link sourceFiles}. Used by the `search_docs` tool.
+   */
+  async documentationFiles(relativePath = '.'): Promise<string[]> {
+    const entries = await this.list(relativePath, 100);
+    return entries
+      .filter((entry) => {
+        if (entry.type !== 'file' || entry.size === undefined || entry.size > MAX_FILE_BYTES) {
+          return false;
+        }
+        const ext = path.extname(entry.path).toLowerCase();
+        if (documentationExtensions.has(ext)) return true;
+        const basename = path.basename(entry.path, ext).toLowerCase();
+        return documentationBasenames.has(basename);
+      })
       .slice(0, MAX_WALK_FILES)
       .map((entry) => entry.path);
   }

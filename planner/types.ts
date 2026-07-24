@@ -8,7 +8,7 @@
  */
 
 /** Tools a plan step can target. `answer` is a no-op terminal step. */
-export type PlanTool = 'list_files' | 'read_file' | 'search_code' | 'answer';
+export type PlanTool = 'list_files' | 'read_file' | 'search_code' | 'search_docs' | 'answer';
 
 /** JSON-compatible tool input fields. */
 export type PlanInput = Record<string, string | number | boolean | null>;

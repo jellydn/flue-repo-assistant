@@ -57,12 +57,13 @@ describe('createPlan (programmatic)', () => {
     assert.equal(plan.steps[1].tool, 'answer');
   });
 
-  test('overview question produces list → read → answer', () => {
+  test('overview question produces search_docs → list → read → answer', () => {
     const plan = createPlan('Give me a high-level overview of this repository.');
-    assert.equal(plan.steps.length, 3);
-    assert.equal(plan.steps[0].tool, 'list_files');
-    assert.equal(plan.steps[1].tool, 'read_file');
-    assert.equal(plan.steps[2].tool, 'answer');
+    assert.equal(plan.steps.length, 4);
+    assert.equal(plan.steps[0].tool, 'search_docs');
+    assert.equal(plan.steps[1].tool, 'list_files');
+    assert.equal(plan.steps[2].tool, 'read_file');
+    assert.equal(plan.steps[3].tool, 'answer');
   });
 
   test('default question produces search → read → read → answer', () => {

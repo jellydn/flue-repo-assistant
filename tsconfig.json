@@ -15,6 +15,7 @@
     "agents/**/*.ts",
     "planner/**/*.ts",
     "reliability/**/*.ts",
+    "investigation/**/*.ts",
     "tools/**/*.ts",
     "tests/**/*.ts",
     "sandbox.ts",

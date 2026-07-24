@@ -9,6 +9,7 @@ import { noFailureInjection } from './failure-injection.ts';
 import {
   validateListResult,
   validateReadResult,
+  validateSearchDocsResult,
   validateSearchResult,
   type ValidationResult,
 } from './validation.ts';
@@ -19,6 +20,7 @@ const validators: Record<string, ToolValidator<unknown>> = {
   list_files: validateListResult,
   read_file: validateReadResult,
   search_code: validateSearchResult,
+  search_docs: validateSearchDocsResult,
 };
 
 /**
@@ -153,7 +155,7 @@ export class SafeToolError extends Error {
 }
 
 function countResult(toolName: string, result: unknown): number | undefined {
-  if (toolName === 'search_code') {
+  if (toolName === 'search_code' || toolName === 'search_docs') {
     const matches = (result as { matches?: unknown[] })?.matches;
     return Array.isArray(matches) ? matches.length : undefined;
   }

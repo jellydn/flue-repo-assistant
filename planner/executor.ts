@@ -87,7 +87,7 @@ export async function executePlan(
 
 /** Detect empty results for replanning decisions. */
 export function isEmptyResult(tool: PlanTool, output: unknown): boolean {
-  if (tool === 'search_code') {
+  if (tool === 'search_code' || tool === 'search_docs') {
     const matches = (output as { matches?: unknown[] })?.matches;
     return Array.isArray(matches) && matches.length === 0;
   }
@@ -99,7 +99,7 @@ export function isEmptyResult(tool: PlanTool, output: unknown): boolean {
 }
 
 function summarizeResult(tool: PlanTool, output: unknown): string {
-  if (tool === 'search_code') {
+  if (tool === 'search_code' || tool === 'search_docs') {
     const matches = (output as { matches?: unknown[] })?.matches;
     return `${Array.isArray(matches) ? matches.length : 0} matches`;
   }
@@ -123,7 +123,9 @@ export function shouldReplan(results: ExecutionResult[]): boolean {
   return results.some(
     (r) =>
       r.status === 'empty' &&
-      (r.tool === 'search_code' || r.tool === 'list_files'),
+      (r.tool === 'search_code' ||
+        r.tool === 'search_docs' ||
+        r.tool === 'list_files'),
   );
 }
 
@@ -178,7 +180,7 @@ export function replan(
 
 const planStepSchema = v.object({
   description: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
-  tool: v.picklist(['list_files', 'read_file', 'search_code', 'answer']),
+  tool: v.picklist(['list_files', 'read_file', 'search_code', 'search_docs', 'answer']),
   input: v.optional(v.record(v.string(), v.union([v.string(), v.number(), v.boolean(), v.null()]))),
 });
 

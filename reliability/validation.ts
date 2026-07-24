@@ -202,3 +202,47 @@ export function validateListResult(output: unknown): ValidationResult<{
 
   return { ok: true, value: shape.value as never };
 }
+
+/**
+ * Validate a search_docs result shape: same structure as search_code.
+ */
+export function validateSearchDocsResult(output: unknown): ValidationResult<{
+  matches: Array<{ path: string; line: number; excerpt: string }>;
+  filesSearched: number;
+  query: string;
+  path: string;
+  truncated: boolean;
+  inspection: unknown;
+}> {
+  const shape = validateShape(output, {
+    matches: 'array',
+    filesSearched: 'number',
+    query: 'string',
+    path: 'string',
+    truncated: 'boolean',
+    inspection: 'object',
+  });
+  if (!shape.ok) return shape;
+
+  const obj = shape.value as {
+    matches: Array<{ path: string; line: number; excerpt: string }>;
+  };
+  for (const match of obj.matches) {
+    if (
+      typeof match?.path !== 'string' ||
+      typeof match?.line !== 'number' ||
+      typeof match?.excerpt !== 'string'
+    ) {
+      return {
+        ok: false,
+        error: new InvalidToolResponseError(
+          'Search docs result match has missing or invalid path/line/excerpt',
+        ),
+      };
+    }
+    const size = validateContentSize(match.excerpt, 1_000);
+    if (!size.ok) return size;
+  }
+
+  return { ok: true, value: shape.value as never };
+}

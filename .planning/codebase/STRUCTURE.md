@@ -19,7 +19,7 @@ flowly/
 ├── demo/              # Deterministic demos (bash + ts)
 ├── docs/              # Hand-maintained docs page + ADRs
 ├── skills/            # Flue skills (analyzing-repositories)
-├── tests/             # Node test-runner tests (29 files + helpers)
+├── tests/             # Node test-runner tests (30 files + helpers)
 ├── .planning/         # Codebase map + internal planning docs
 ├── .github/workflows/ # CI + review + example workflows
 ├── sandbox.ts         # Empty toolset replacing default FS/shell tools
@@ -57,7 +57,7 @@ flowly/
 
 **`review/`:**
 - Purpose: PR review domain (tools, schema, state, filters, limits)
-- Contains: `review-tools.ts`, `schema.ts`, `pr-data.ts`, `diff.ts`, `filters.ts`, `limits.ts`, `review-state.ts`, `review-state-store.ts`, `specialists.ts`
+- Contains: `review-tools.ts`, `schema.ts`, `pr-data.ts`, `diff.ts`, `filters.ts`, `limits.ts`, `review-state.ts`, `review-state-store.ts`, `specialists.ts`, `advisor.ts`
 - Key files: `schema.ts` (ReviewResult), `review-tools.ts`
 
 **`github/`:**
@@ -92,7 +92,7 @@ flowly/
 
 **`tests/`:**
 - Purpose: All automated tests (single directory, not co-located)
-- Contains: 29 `.test.ts` files + `helpers.ts` (fixture builders, tool invocation)
+- Contains: 30 `.test.ts` files + `helpers.ts` (fixture builders, tool invocation)
 - Key files: `helpers.ts`, `event-router.test.ts`, `bench-runner.test.ts`
 
 ## Key File Locations

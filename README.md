@@ -104,24 +104,26 @@ exists.
 
 ## Configuration
 
-| Variable                          | Default                       | Purpose                                                            |
-| --------------------------------- | ----------------------------- | ------------------------------------------------------------------ |
-| `REPOSITORY_PATH`                 | `../oak`                      | Only repository the tools may inspect                              |
-| `REPO_ASSISTANT_MODEL`            | `openrouter/qwen/qwen3-coder` | Flue model specifier                                               |
-| `REPO_ASSISTANT_MAX_STEPS`        | `8`                           | Shared inspection-call budget (1–20)                               |
-| `REPO_ASSISTANT_DEBUG`            | `false`                       | Log one safe line per tool call                                    |
-| `REPO_ASSISTANT_SEARCH_FALLBACK`  | `false`                       | Search tools fall back to `read_file` on transient failure         |
-| `GITHUB_TOKEN`                    | _unset_                       | GitHub token for PR review automation                              |
-| `GITHUB_REPOSITORY`               | _unset_                       | `owner/repo` for PR review automation                              |
-| `PR_NUMBER`                       | _unset_                       | Pull request number to review                                      |
-| `BASE_SHA`                        | _unset_                       | Base commit SHA for PR diff                                        |
-| `HEAD_SHA`                        | _unset_                       | Head commit SHA for PR diff                                        |
-| `PR_REVIEW_MAX_FILES`             | `30`                          | Max changed files reviewed                                         |
-| `PR_REVIEW_MAX_DIFF_LINES`        | `4000`                        | Max unified-diff lines returned                                    |
-| `PR_REVIEW_MAX_CONTEXT_READS`     | `20`                          | Max `read_file`/`search_code` calls                                |
-| `PR_REVIEW_MAX_FINDINGS`          | `10`                          | Max findings submitted in review                                   |
-| `PR_REVIEW_SPECIALISTS`           | all four roles                | Comma-separated correctness, security, testing, architecture roles |
-| `PR_REVIEW_SPECIALIST_TIMEOUT_MS` | `30000`                       | Per-specialist timeout in milliseconds                             |
+| Variable                         | Default                       | Purpose                                                            |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------ |
+| `REPOSITORY_PATH`                | `../oak`                      | Only repository the tools may inspect                              |
+| `REPO_ASSISTANT_MODEL`           | `openrouter/qwen/qwen3-coder` | Flue model specifier                                               |
+| `REPO_ASSISTANT_MAX_STEPS`       | `8`                           | Shared inspection-call budget (1–20)                               |
+| `REPO_ASSISTANT_DEBUG`           | `false`                       | Log one safe line per tool call                                    |
+| `REPO_ASSISTANT_SEARCH_FALLBACK` | `false`                       | Search tools fall back to `read_file` on transient failure         |
+| `GITHUB_TOKEN`                   | _unset_                       | GitHub token for PR review automation                              |
+| `GITHUB_REPOSITORY`              | _unset_                       | `owner/repo` for PR review automation                              |
+| `PR_NUMBER`                      | _unset_                       | Pull request number to review                                      |
+| `BASE_SHA`                       | _unset_                       | Base commit SHA for PR diff                                        |
+| `HEAD_SHA`                       | _unset_                       | Head commit SHA for PR diff                                        |
+| `PR_REVIEW_MAX_FILES`            | `30`                          | Max changed files reviewed                                         |
+| `PR_REVIEW_MAX_DIFF_LINES`       | `4000`                        | Max unified-diff lines returned                                    |
+| `PR_REVIEW_MAX_CONTEXT_READS`    | `20`                          | Max `read_file`/`search_code` calls                                |
+| `PR_REVIEW_MAX_FINDINGS`         | `10`                          | Max findings submitted in review                                   |
+| `PR_REVIEW_SPECIALISTS`          | all four roles                | Comma-separated correctness, security, testing, architecture roles |     | `PR_REVIEW_SPECIALIST_TIMEOUT_MS` | `30000` | Per-specialist timeout in milliseconds |
+| `PR_REVIEW_ADVISOR_ENABLED`      | `false`                       | Enable advisor validation before publication                       |
+| `PR_REVIEW_ADVISOR_MODEL`        | free review model             | Model identifier supplied to an advisor runner                     |
+| `PR_REVIEW_ADVISOR_TIMEOUT_MS`   | `30000`                       | Per-finding advisor timeout in milliseconds                        |
 
 To inspect another checkout:
 
@@ -142,6 +144,14 @@ to a comma-separated subset and `PR_REVIEW_SPECIALIST_TIMEOUT_MS` to bound each
 runner. The seam is provider-agnostic because Flue currently declares one model
 per agent render; a model-backed runner can be supplied without changing the
 validation or adjudication layer.
+
+An optional advisor seam (`PR_REVIEW_ADVISOR_ENABLED=true`) validates each
+candidate with an independent runner before publication. It returns observable
+accept/revise/reject decisions and reasons, preserves candidates on malformed or
+timed-out advice, and only permits revisions to finding content—not file paths
+or line anchors. The configured model name is metadata for the runner; the
+trusted publisher never exposes provider credentials or prompts in GitHub review
+body output.
 
 In GitHub Actions, `.github/workflows/pr-review.yml` supplies the required
 environment variables automatically. Locally:

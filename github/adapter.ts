@@ -22,6 +22,7 @@
  */
 
 import { type FileDiff, findFileDiff, hunkForLine, parseUnifiedDiff } from '../review/diff.ts';
+import { runAdvisor, type AdvisorConfig, type AdvisorRunner } from '../review/advisor.ts';
 import type { ReviewLimits } from '../review/limits.ts';
 import {
   type Finding,
@@ -59,6 +60,12 @@ export type ReviewPublisherOptions = {
    * saves the current head SHA and findings after posting so the next
    * `synchronize` run can produce an incremental review. */
   stateStore?: ReviewStateStore;
+  /** Optional advisor seam. When enabled, candidates are validated before posting. */
+  advisor?: {
+    config: AdvisorConfig;
+    runner?: AdvisorRunner;
+    repositoryContext?: string;
+  };
 };
 
 export type ReviewPublisher = {
@@ -95,8 +102,31 @@ export function createReviewPublisher(options: ReviewPublisherOptions): ReviewPu
       }
 
       const { fileDiffs, changedPaths } = await resolveDiff();
+      let review = parsed.value;
+      let advisorIssues: string[] = [];
+      let advisorNotes: string[] = [];
+      if (options.advisor?.config.enabled) {
+        const advised = await runAdvisor({
+          config: options.advisor.config,
+          candidates: review.findings.map((finding) => ({ ...finding, sources: [] })),
+          diff: cachedDiff ?? '',
+          repositoryContext: options.advisor.repositoryContext,
+          runner: options.advisor.runner,
+        });
+        review = {
+          ...review,
+          findings: advised.findings.map(
+            ({ advisor: _advisor, sources: _sources, ...finding }) => finding,
+          ),
+        };
+        advisorIssues = advised.errors;
+        advisorNotes = advised.decisions.map(
+          (decision) =>
+            `${decision.decision}: ${decision.path}/${decision.title} — ${decision.reason}`,
+        );
+      }
       return publishValidatedReview(
-        parsed.value,
+        review,
         options.client,
         options.prNumber,
         options.headSha,
@@ -104,6 +134,8 @@ export function createReviewPublisher(options: ReviewPublisherOptions): ReviewPu
         changedPaths,
         options.limits,
         options.stateStore,
+        advisorIssues,
+        advisorNotes,
       );
     },
   };
@@ -118,6 +150,8 @@ async function publishValidatedReview(
   changedPaths: Set<string>,
   limits: ReviewLimits,
   stateStore?: ReviewStateStore,
+  advisorIssues: string[] = [],
+  advisorNotes: string[] = [],
 ): Promise<ReviewPublishResult> {
   const capped = result.findings.slice(0, limits.maxFindings);
   const skippedFindings = result.findings.length - capped.length;
@@ -185,11 +219,12 @@ async function publishValidatedReview(
       skippedFindings,
       result.previousFindingClassifications,
       result.proposedLearnings,
+      advisorNotes,
     ),
     comments: inlineComments,
   };
 
-  const validationIssues = droppedFindings.map((d) => d.reason);
+  const validationIssues = [...advisorIssues, ...droppedFindings.map((d) => d.reason)];
   let postedInline = inlineComments.length;
   let submitted: { id: number; html_url: string };
   try {
@@ -272,6 +307,7 @@ function formatReviewBody(
   skippedFindings: number,
   classifications?: FindingClassification[],
   proposedLearnings?: ProposedLearning[],
+  advisorNotes: string[] = [],
 ): string {
   const lines = ['## Flue PR Review', '', summary, ''];
   const inlineFindings = findings.filter(
@@ -286,6 +322,10 @@ function formatReviewBody(
       const location = f.line === undefined ? f.path : `${f.path}:${f.line}`;
       lines.push(`- **[${f.severity}]** ${f.title} — \`${location}\``);
     }
+  }
+
+  if (advisorNotes.length > 0) {
+    lines.push('', '### Advisor decisions', '', ...advisorNotes.map((note) => `- ${note}`));
   }
 
   if (classifications && classifications.length > 0) {

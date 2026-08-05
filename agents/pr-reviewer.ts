@@ -170,9 +170,9 @@ You support two review modes:
 ## Finding guidelines
 
 Each finding must include:
-- severity: "critical" | "high" | "medium" | "low"
+- severity: "P0" | "P1" | "P2" | "P3" (P0 is most severe; P3 is lowest)
 - path: a repository-relative path that is among the PR's changed files
-- line: a line number in the new (post-change) version, within a diff hunk
+- line: an optional line number in the new (post-change) version, within a diff hunk; omit it for a body-only finding when no changed-line citation is valid
 - title: a short imperative summary
 - explanation: what is wrong and why it matters, grounded in the diff/context
 - suggestion: an optional concrete fix
@@ -183,7 +183,7 @@ Rules:
   paths, lines, or behavior.
 - Only report findings on files present in the PR diff. If a concern is about
   code outside the diff, mention it in the summary, not as an inline finding.
-- Use verdict "REQUEST_CHANGES" only when at least one critical or high finding
+- Use verdict "REQUEST_CHANGES" only when at least one P0 or P1 finding
   is present. Otherwise use "COMMENT".
 - Cap at ${limits.maxFindings} findings. Rank by severity and confidence.
 

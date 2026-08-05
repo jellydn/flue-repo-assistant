@@ -183,6 +183,74 @@ describe('review tools', () => {
     assert.equal(result.hunks[0].newStart, 10);
   });
 
+  test('submit_review recovers valid findings and reports malformed items', async () => {
+    let published: any = null;
+    const fakePublisher: ReviewPublisher = {
+      async publish(result) {
+        published = result;
+        return {
+          reviewId: 98,
+          htmlUrl: 'https://example/review/98',
+          submittedFindings: 1,
+          skippedFindings: 0,
+          validationIssues: [],
+        };
+      },
+    };
+    const tool = createSubmitReviewTool(fakePublisher);
+    const raw = await tool.run({
+      toolCallId: 'test',
+      log: { info() {}, warn() {}, error() {} },
+      data: {
+        summary: 'Mixed findings.',
+        verdict: 'COMMENT',
+        findings: [
+          {
+            severity: 'low',
+            path: 'a.ts',
+            line: 1,
+            title: 'valid',
+            explanation: 'e',
+            confidence: 0.5,
+          },
+          'malformed scalar',
+        ],
+      },
+    });
+    const envelope = raw as {
+      output: { reviewId: number; validationIssues: string[] };
+      terminate?: boolean;
+    };
+    assert.equal(envelope.output.reviewId, 98);
+    assert.equal(envelope.terminate, true);
+    assert.match(envelope.output.validationIssues.join('\n'), /findings\.1/);
+    assert.equal(published.findings.length, 1);
+    assert.equal(published.findings[0].severity, 'P3');
+  });
+
+  test('submit_review rejects when every finding is malformed', async () => {
+    const fakePublisher: ReviewPublisher = {
+      async publish() {
+        throw new Error('publisher should not be called');
+      },
+    };
+    const tool = createSubmitReviewTool(fakePublisher);
+    await assert.rejects(
+      Promise.resolve().then(() =>
+        tool.run({
+          toolCallId: 'test',
+          log: { info() {}, warn() {}, error() {} },
+          data: {
+            summary: 'Invalid findings.',
+            verdict: 'COMMENT',
+            findings: [null],
+          },
+        }),
+      ),
+      /rejected all 1 finding/,
+    );
+  });
+
   test('submit_review publishes and terminates the turn', async () => {
     let published: unknown = null;
     const fakePublisher: ReviewPublisher = {
@@ -205,7 +273,7 @@ describe('review tools', () => {
         summary: 's',
         verdict: 'COMMENT',
         findings: [
-          { severity: 'low', path: 'a.ts', line: 1, title: 't', explanation: 'e', confidence: 0.5 },
+          { severity: 'P3', path: 'a.ts', line: 1, title: 't', explanation: 'e', confidence: 0.5 },
         ],
       },
     });
@@ -236,7 +304,7 @@ describe('review tools', () => {
           reviewedHeadSha: 'abc123',
           findings: [
             {
-              severity: 'high',
+              severity: 'P1',
               path: 'src/auth.ts',
               line: 10,
               title: 'SQL injection',

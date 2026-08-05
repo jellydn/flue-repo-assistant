@@ -72,7 +72,7 @@ const sampleState: ReviewState = {
   reviewedHeadSha: 'abc123',
   findings: [
     {
-      severity: 'medium',
+      severity: 'P2',
       path: 'src/auth.ts',
       line: 10,
       title: 'Silent error',

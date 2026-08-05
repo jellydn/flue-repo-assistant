@@ -84,7 +84,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'medium',
+          severity: 'P2',
           path: 'src/auth.ts',
           line: 11,
           title: 'Silent error',
@@ -103,7 +103,7 @@ describe('review publisher', () => {
     const comment = client.submitted[0].payload.comments[0];
     assert.equal(comment.path, 'src/auth.ts');
     assert.equal(comment.side, 'RIGHT');
-    assert.match(comment.body, /MEDIUM\] Silent error/);
+    assert.match(comment.body, /P2\] Silent error/);
     assert.match(comment.body, /Suggestion/);
   });
 
@@ -122,7 +122,7 @@ describe('review publisher', () => {
       verdict: 'REQUEST_CHANGES',
       findings: [
         {
-          severity: 'critical',
+          severity: 'P0',
           path: 'src/auth.ts',
           line: 11,
           title: 'SQL injection',
@@ -150,7 +150,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'low',
+          severity: 'P3',
           path: 'not-in-diff.ts',
           line: 1,
           title: 'x',
@@ -182,7 +182,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'low',
+          severity: 'P3',
           path: 'src/auth.ts',
           line: 9999,
           title: 'x',
@@ -210,7 +210,7 @@ describe('review publisher', () => {
       summary: 's',
       verdict: 'COMMENT',
       findings: Array.from({ length: 5 }, (_, i) => ({
-        severity: 'low' as const,
+        severity: 'P3' as const,
         path: 'src/auth.ts',
         line: 10 + i,
         title: `t${i}`,
@@ -273,7 +273,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'medium',
+          severity: 'P2',
           path: 'src/old.ts',
           line: 1,
           title: 'on deleted file',
@@ -281,7 +281,7 @@ describe('review publisher', () => {
           confidence: 0.6,
         },
         {
-          severity: 'medium',
+          severity: 'P2',
           path: 'src/auth.ts',
           line: 11,
           title: 'valid finding',
@@ -327,7 +327,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'medium',
+          severity: 'P2',
           path: 'src/auth.ts',
           line: 11,
           title: 't',
@@ -367,7 +367,7 @@ describe('review publisher', () => {
           verdict: 'COMMENT',
           findings: [
             {
-              severity: 'low',
+              severity: 'P3',
               path: 'src/auth.ts',
               line: 11,
               title: 't',
@@ -405,7 +405,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'medium',
+          severity: 'P2',
           path: 'src/auth.ts',
           line: 11,
           title: 't',
@@ -476,7 +476,7 @@ describe('review publisher', () => {
       summary: 's',
       verdict: 'COMMENT',
       findings: Array.from({ length: 5 }, (_, i) => ({
-        severity: 'low' as const,
+        severity: 'P3' as const,
         path: 'src/auth.ts',
         line: 10 + i,
         title: `t${i}`,
@@ -520,7 +520,7 @@ describe('review publisher', () => {
         verdict: 'COMMENT',
         findings: [
           {
-            severity: 'low',
+            severity: 'P3',
             path: 'src/auth.ts',
             line: 11,
             title: 't',
@@ -557,7 +557,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'low',
+          severity: 'P3',
           path: 'src/auth.ts',
           line: 11,
           title: 't',
@@ -639,7 +639,7 @@ describe('review publisher', () => {
       verdict: 'COMMENT',
       findings: [
         {
-          severity: 'low',
+          severity: 'P3',
           path: 'src/auth.ts',
           line: 11,
           title: 'Valid finding',
@@ -647,7 +647,7 @@ describe('review publisher', () => {
           confidence: 0.5,
         },
         {
-          severity: 'medium',
+          severity: 'P2',
           path: 'src/nonexistent.ts',
           line: 5,
           title: 'Dropped finding',

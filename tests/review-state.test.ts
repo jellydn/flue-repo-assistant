@@ -11,7 +11,7 @@ const sampleState: ReviewState = {
   reviewedHeadSha: 'abc123def456',
   findings: [
     {
-      severity: 'high',
+      severity: 'P1',
       path: 'src/auth.ts',
       line: 42,
       title: 'SQL injection',
@@ -20,7 +20,7 @@ const sampleState: ReviewState = {
       confidence: 0.9,
     },
     {
-      severity: 'low',
+      severity: 'P3',
       path: 'src/utils.ts',
       line: 10,
       title: 'Unused import',

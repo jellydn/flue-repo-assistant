@@ -144,8 +144,7 @@ GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo PR_NUMBER=42 \
 
 Set `PR_REVIEW_MAX_FILES`, `PR_REVIEW_MAX_DIFF_LINES`,
 `PR_REVIEW_MAX_CONTEXT_READS`, or `PR_REVIEW_MAX_FINDINGS` to override the
-defaults. Findings are validated against the PR diff before posting; the review
-never auto-approves.
+defaults. Findings are validated against the PR diff before posting; findings use the canonical P0-P3 severity scale, while older critical/high/medium/low values are normalized for compatibility. Findings without a changed-line citation are retained in the review body but are not posted inline. The review never auto-approves.
 
 ## How the bound works
 

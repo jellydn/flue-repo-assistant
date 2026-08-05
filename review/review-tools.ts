@@ -12,7 +12,7 @@ import type {
   ReviewContextResult,
 } from './pr-data.ts';
 import type { ReviewState } from './review-state.ts';
-import { type ReviewResult, reviewResultSchema } from './schema.ts';
+import { recoverReviewResult, reviewResultInputSchema } from './schema.ts';
 
 const MAX_PATH_LENGTH = 500;
 
@@ -165,14 +165,26 @@ export function createSubmitReviewTool(publisher: ReviewPublisher) {
   return defineTool({
     name: 'submit_review',
     description:
-      'Submit the final PR review. Accepts a structured ReviewResult (summary, verdict, findings). The trusted publisher validates paths/lines against the PR diff and posts one GitHub review with inline comments. Verdict is COMMENT or REQUEST_CHANGES — never APPROVE. Call this exactly once when the review is complete. When there are no blocking issues, use verdict COMMENT with an empty findings array.',
-    input: reviewResultSchema,
+      'Submit the final PR review. Accepts a structured ReviewResult (summary, verdict, findings). Each finding should include severity P0-P3, path, optional line, title, explanation, optional suggestion, and confidence. The trusted publisher validates paths/lines against the PR diff, keeps body-only findings when no valid line exists, and posts one GitHub review with inline comments. Verdict is COMMENT or REQUEST_CHANGES — never APPROVE. Call this exactly once when the review is complete. When there are no blocking issues, use verdict COMMENT with an empty findings array.',
+    input: reviewResultInputSchema,
     async run({ data }) {
-      const result: ReviewResult = data;
-      const published = await publisher.publish(result);
+      const recovered = recoverReviewResult(data);
+      if (!recovered.ok) {
+        throw new Error(
+          `submit_review received an invalid review result:\n- ${recovered.issues.join('\\n- ')}`,
+        );
+      }
+      if (data.findings.length > 0 && recovered.value.findings.length === 0) {
+        throw new Error(
+          `submit_review rejected all ${data.findings.length} finding(s):\\n- ${recovered.issues.join('\\n- ')}`,
+        );
+      }
+      const published = await publisher.publish(recovered.value);
+      const recoveryIssues = recovered.issues;
       return {
         output: {
           ...published,
+          validationIssues: [...recoveryIssues, ...published.validationIssues],
           message: `Review posted (${published.submittedFindings} inline finding(s), ${published.skippedFindings} skipped). ${published.htmlUrl}`,
         },
         terminate: true,

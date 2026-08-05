@@ -134,6 +134,14 @@ async function publishValidatedReview(
       continue;
     }
 
+    if (finding.line === undefined) {
+      droppedFindings.push({
+        finding,
+        reason: `finding "${finding.title}" has no line citation; posted in the review body`,
+      });
+      continue;
+    }
+
     const fileDiff = findFileDiff(fileDiffs, finding.path);
     const hunk = fileDiff ? hunkForLine(fileDiff, finding.line) : null;
 
@@ -266,13 +274,17 @@ function formatReviewBody(
   proposedLearnings?: ProposedLearning[],
 ): string {
   const lines = ['## Flue PR Review', '', summary, ''];
+  const inlineFindings = findings.filter(
+    (finding) => !droppedFindings.some((dropped) => dropped.finding === finding),
+  );
 
   if (findings.length === 0) {
     lines.push('No blocking issues found.');
   } else {
     lines.push('### Findings', '');
-    for (const f of findings) {
-      lines.push(`- **[${f.severity.toUpperCase()}]** ${f.title} — \`${f.path}:${f.line}\``);
+    for (const f of inlineFindings) {
+      const location = f.line === undefined ? f.path : `${f.path}:${f.line}`;
+      lines.push(`- **[${f.severity}]** ${f.title} — \`${location}\``);
     }
   }
 
@@ -286,7 +298,8 @@ function formatReviewBody(
     };
     for (const c of classifications) {
       const icon = icons[c.status] ?? '•';
-      lines.push(`- ${icon} ${c.status}: ${c.title} — \`${c.path}:${c.line}\``);
+      const location = c.line === undefined ? c.path : `${c.path}:${c.line}`;
+      lines.push(`- ${icon} ${c.status}: ${c.title} — \`${location}\``);
     }
   }
 

@@ -25,7 +25,8 @@ Rust-focused monorepo for privacy-preserving distributed systems.
 - Repository-relative path and symlink confinement
 - Evidence-only answers with file and line citations
 - A shared, configurable inspection budget
-- No declared subagent profiles, persistence, deployment, or web UI
+- No declared subagent profiles, deployment, or web UI
+- Optional persistent, versioned workspaces with lazy in-memory sandbox hydration
 
 ## How it works
 
@@ -104,22 +105,22 @@ exists.
 
 ## Configuration
 
-| Variable                      | Default                       | Purpose                               |
-| ----------------------------- | ----------------------------- | ------------------------------------- |
-| `REPOSITORY_PATH`             | `../oak`                      | Only repository the tools may inspect |
-| `REPO_ASSISTANT_MODEL`        | `openrouter/qwen/qwen3-coder` | Flue model specifier                  |
-| `REPO_ASSISTANT_MAX_STEPS`    | `8`                           | Shared inspection-call budget (1–20)  |
-| `REPO_ASSISTANT_DEBUG`        | `false`                       | Log one safe line per tool call       |
-| `REPO_ASSISTANT_SEARCH_FALLBACK` | `false`                    | Search tools fall back to `read_file` on transient failure |
-| `GITHUB_TOKEN`                | _unset_                       | GitHub token for PR review automation |
-| `GITHUB_REPOSITORY`           | _unset_                       | `owner/repo` for PR review automation |
-| `PR_NUMBER`                   | _unset_                       | Pull request number to review         |
-| `BASE_SHA`                    | _unset_                       | Base commit SHA for PR diff           |
-| `HEAD_SHA`                    | _unset_                       | Head commit SHA for PR diff           |
-| `PR_REVIEW_MAX_FILES`         | `30`                          | Max changed files reviewed            |
-| `PR_REVIEW_MAX_DIFF_LINES`    | `4000`                        | Max unified-diff lines returned       |
-| `PR_REVIEW_MAX_CONTEXT_READS` | `20`                          | Max `read_file`/`search_code` calls   |
-| `PR_REVIEW_MAX_FINDINGS`      | `10`                          | Max findings submitted in review      |
+| Variable                         | Default                       | Purpose                                                    |
+| -------------------------------- | ----------------------------- | ---------------------------------------------------------- |
+| `REPOSITORY_PATH`                | `../oak`                      | Only repository the tools may inspect                      |
+| `REPO_ASSISTANT_MODEL`           | `openrouter/qwen/qwen3-coder` | Flue model specifier                                       |
+| `REPO_ASSISTANT_MAX_STEPS`       | `8`                           | Shared inspection-call budget (1–20)                       |
+| `REPO_ASSISTANT_DEBUG`           | `false`                       | Log one safe line per tool call                            |
+| `REPO_ASSISTANT_SEARCH_FALLBACK` | `false`                       | Search tools fall back to `read_file` on transient failure |
+| `GITHUB_TOKEN`                   | _unset_                       | GitHub token for PR review automation                      |
+| `GITHUB_REPOSITORY`              | _unset_                       | `owner/repo` for PR review automation                      |
+| `PR_NUMBER`                      | _unset_                       | Pull request number to review                              |
+| `BASE_SHA`                       | _unset_                       | Base commit SHA for PR diff                                |
+| `HEAD_SHA`                       | _unset_                       | Head commit SHA for PR diff                                |
+| `PR_REVIEW_MAX_FILES`            | `30`                          | Max changed files reviewed                                 |
+| `PR_REVIEW_MAX_DIFF_LINES`       | `4000`                        | Max unified-diff lines returned                            |
+| `PR_REVIEW_MAX_CONTEXT_READS`    | `20`                          | Max `read_file`/`search_code` calls                        |
+| `PR_REVIEW_MAX_FINDINGS`         | `10`                          | Max findings submitted in review                           |
 
 To inspect another checkout:
 
@@ -255,13 +256,13 @@ review.
 The reviewer reads repository-specific documentation via `get_review_context`
 at the start of each review. It looks for these files in the checked-out repo:
 
-| File | Purpose |
-|------|---------|
-| `AGENTS.md` | Project conventions, build/test commands, architecture |
-| `CONTRIBUTING.md` | Contribution guidelines |
-| `.github/pull_request_template.md` | PR template (what the author should provide) |
-| `.flue/review-instructions.md` | Review-specific priorities and rules |
-| `.flue/repository-learnings.md` | Durable learnings accumulated from past reviews |
+| File                               | Purpose                                                |
+| ---------------------------------- | ------------------------------------------------------ |
+| `AGENTS.md`                        | Project conventions, build/test commands, architecture |
+| `CONTRIBUTING.md`                  | Contribution guidelines                                |
+| `.github/pull_request_template.md` | PR template (what the author should provide)           |
+| `.flue/review-instructions.md`     | Review-specific priorities and rules                   |
+| `.flue/repository-learnings.md`    | Durable learnings accumulated from past reviews        |
 
 Only files that exist are returned; each is capped at 200 lines. The content is
 treated as **data** — it informs the review but never overrides the agent's
@@ -307,6 +308,22 @@ GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo PR_NUMBER=42 \
 The reviewer supports full reviews (opened / reopened / ready_for_review),
 incremental reviews (synchronize), and repository-specific memory (Phase 3).
 It never modifies code, pushes commits, or auto-approves.
+
+## Persistent workspaces
+
+The optional `workspace.ts` module provides a runtime-independent workspace store
+for agent sessions that need state across process restarts. Workspaces support:
+
+- JSON snapshots backed by memory or a file store;
+- optimistic compare-and-swap versions that reject stale collaborators;
+- snapshot/restore operations and relative-path confinement; and
+- lazy hydration into the restricted in-memory sandbox, with workspace-file and
+  newly created session-file changes persisted back after each operation.
+
+The workspace sandbox never exposes the host filesystem. Its factory is created
+without starting a session; Flue initializes one shared session environment on
+the first `createSessionEnv` call. Persistence is opt-in and remains separate
+from the read-only repository inspection tools.
 
 ## GitHub event router
 
@@ -818,7 +835,7 @@ Grounded answer with citations + confidence
 | `search_code`  | Yes              | Search source files for a literal string        |
 | `read_file`    | Yes              | Read a bounded line range from a known file     |
 | `list_files`   | Yes              | List files and directories under a path         |
-| `retrieve`     | Yes              | Semantic retrieval over the repository index     |
+| `retrieve`     | Yes              | Semantic retrieval over the repository index    |
 | `create_plan`  | No               | Declare a 3–5 step plan before executing        |
 | `replan`       | No               | Revise the plan when a step returns no results  |
 | `reflect_plan` | No               | Reflect on whether steps could be simplified    |
@@ -959,6 +976,7 @@ flowly/
 │   ├── planner.ts              # create_plan tool
 │   ├── reflection.ts           # reflect_plan tool
 │   └── types.ts
+├── workspace.ts                 # versioned workspace store + snapshots
 ├── reliability/
 │   ├── errors.ts
 │   ├── failure-injection.ts
